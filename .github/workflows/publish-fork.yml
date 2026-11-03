@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - bb/usesend-fork-postbox-support-thr_9tcbrvawi8
     tags:
       - "*"
 

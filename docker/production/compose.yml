@@ -1,0 +1,79 @@
+name: usesend
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      POSTGRES_USER: usesend
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: usesend
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U usesend -d usesend"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    mem_limit: 128m
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "96mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - cache:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  usesend:
+    image: ${USESEND_IMAGE:?required}
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: postgresql://usesend:${POSTGRES_PASSWORD:?required}@postgres:5432/usesend
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_URL: https://${USESEND_HOST:?required}
+      NEXTAUTH_URL_INTERNAL: http://127.0.0.1:3000
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?required}
+      FROM_EMAIL: ${FROM_EMAIL:?required}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?required}
+      AWS_DEFAULT_REGION: ru-central1
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?required}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?required}
+      EMAIL_PROVIDER: postbox
+      POSTBOX_YDS_ENDPOINT: https://yds.serverless.yandexcloud.net
+      POSTBOX_YDS_STREAM: ${POSTBOX_YDS_STREAM:?required}
+      NEXT_PUBLIC_IS_CLOUD: "false"
+      API_RATE_LIMIT: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: traefik-public
+      traefik.http.routers.usesend.rule: Host(`${USESEND_HOST:?required}`)
+      traefik.http.routers.usesend.entrypoints: websecure
+      traefik.http.routers.usesend.tls.certresolver: letsencrypt
+      traefik.http.services.usesend.loadbalancer.server.port: "3000"
+    networks: [internal, traefik-public]
+
+networks:
+  internal:
+    internal: true
+  traefik-public:
+    external: true
+
+volumes:
+  database:
+  cache:
