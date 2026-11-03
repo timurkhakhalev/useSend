@@ -26,8 +26,25 @@ export const emailSchema = z
       .array(
         z.object({
           filename: z.string().min(1),
-          content: z.string().min(1), // Consider base64 validation if needed
-        })
+          content: z.string().min(1), // Base64-encoded file data.
+          contentId: z
+            .string()
+            .regex(/^[^\s<>]+$/)
+            .optional()
+            .openapi({
+              description:
+                "Content-ID without angle brackets; reference it as cid:<contentId> in HTML",
+              example: "torch-light@giftsofprometheus",
+            }),
+          contentType: z
+            .string()
+            .regex(/^[a-zA-Z0-9!#$%&'*+.^_`|~-]+\/[a-zA-Z0-9!#$%&'*+.^_`|~-]+$/)
+            .optional()
+            .openapi({
+              description: "MIME type; inferred from filename when omitted",
+              example: "image/png",
+            }),
+        }),
       )
       .max(10) // Limit attachments array size if desired
       .optional(),
@@ -36,9 +53,9 @@ export const emailSchema = z
   })
   .refine(
     (data) => !!data.subject || !!data.templateId,
-    "Either subject or templateId must be provided."
+    "Either subject or templateId must be provided.",
   )
   .refine(
     (data) => !!data.text || !!data.html,
-    "Either text or html content must be provided."
+    "Either text or html content must be provided.",
   );

@@ -247,7 +247,6 @@ export async function sendRawEmail({
 }: Partial<EmailContent> & {
   region: string;
   configurationSetName: string;
-  attachments?: { filename: string; content: string }[]; // Made attachments optional
   cc?: string[];
   bcc?: string[];
   replyTo?: string[];
@@ -274,6 +273,9 @@ export async function sendRawEmail({
       attachments: attachments?.map((attachment) => ({
         filename: attachment.filename,
         content: attachment.content,
+        cid: attachment.contentId,
+        contentType: attachment.contentType,
+        contentDisposition: attachment.contentId ? "inline" : undefined,
         encoding: "base64",
       })),
       text,

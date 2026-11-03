@@ -164,6 +164,41 @@ describe("email-service templates", () => {
     mockCheckMultipleEmails.mockResolvedValue({});
   });
 
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])(
+    "preserves inline attachments (batch=%s, scheduled=%s)",
+    async (batch, scheduled) => {
+      const attachments = [
+        {
+          filename: "torch.png",
+          content: "aW1hZ2U=",
+          contentId: "torch@site",
+          contentType: "image/png",
+        },
+      ];
+      const payload = {
+        to: "user@example.com",
+        from: "hello@example.com",
+        subject: "Inline image",
+        html: '<img src="cid:torch@site">',
+        teamId: 1,
+        attachments,
+        scheduledAt: scheduled ? "2030-01-01T12:00:00Z" : undefined,
+      };
+      if (batch) await sendBulkEmails([payload]);
+      else await sendEmail(payload);
+      const data = mockDb.email.create.mock.calls[0]![0].data;
+      expect(JSON.parse(data.attachments)).toEqual(attachments);
+      expect(data.scheduledAt).toEqual(
+        scheduled ? new Date(payload.scheduledAt!) : undefined,
+      );
+    },
+  );
+
   describe("sendEmail", () => {
     it("renders a template owned by the sending team", async () => {
       await sendEmail({

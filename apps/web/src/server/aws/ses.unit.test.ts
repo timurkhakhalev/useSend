@@ -120,6 +120,27 @@ describe("sendRawEmail", () => {
     );
   });
 
+  it("builds multipart/related with inline Content-ID attachments", async () => {
+    const { raw } = await buildRawMessage({
+      html: '<img src="cid:torch-light@giftsofprometheus">',
+      attachments: [
+        {
+          filename: "torch.dat",
+          content: Buffer.from("image bytes").toString("base64"),
+          contentId: "torch-light@giftsofprometheus",
+          contentType: "image/png",
+        },
+      ],
+    });
+    const unfolded = unfold(raw);
+    expect(unfolded).toContain("Content-Type: multipart/related;");
+    expect(unfolded).toContain("Content-ID: <torch-light@giftsofprometheus>");
+    expect(unfolded).toContain(
+      "Content-Disposition: inline; filename=torch.dat",
+    );
+    expect(unfolded).toContain("Content-Type: image/png; name=torch.dat");
+  });
+
   it("omits optional headers and the mixed part when unused", async () => {
     const { raw, input } = await buildRawMessage({
       cc: undefined,

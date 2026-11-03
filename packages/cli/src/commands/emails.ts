@@ -31,7 +31,12 @@ type EmailPayload = {
   text?: string | null;
   html?: string | null;
   headers?: Record<string, string>;
-  attachments?: Array<{ filename: string; content: string }>;
+  attachments?: Array<{
+    filename: string;
+    content: string;
+    contentId?: string;
+    contentType?: string;
+  }>;
   scheduledAt?: string;
   inReplyToId?: string | null;
 };

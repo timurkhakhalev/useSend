@@ -53,6 +53,40 @@ describe("emails send", () => {
     });
   });
 
+  it("preserves inline attachment metadata from a payload file", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "usesend-inline-"));
+    const attachments = [
+      {
+        filename: "torch.png",
+        content: "aW1hZ2U=",
+        contentId: "torch@site",
+        contentType: "image/png",
+      },
+    ];
+    const file = path.join(dir, "payload.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        from: "hi@x.com",
+        to: "a@x.com",
+        subject: "Inline",
+        html: '<img src="cid:torch@site">',
+        attachments,
+      }),
+    );
+    const { fetch, calls } = mockFetch(() => ({
+      body: { emailId: "inline-1" },
+    }));
+    const result = await cli(["emails", "send", "--file", file, "--json"], {
+      env: ENV,
+      fetch,
+    });
+    expect(result.code).toBe(0);
+    expect((calls[0]!.body as { attachments: unknown }).attachments).toEqual(
+      attachments,
+    );
+  });
+
   it("template sends get a placeholder html and parsed variables; USESEND_FROM is the default sender", async () => {
     const { fetch, calls } = mockFetch(() => ({ body: { emailId: "e2" } }));
     const r = await cli(

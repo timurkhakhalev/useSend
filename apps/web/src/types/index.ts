@@ -20,4 +20,6 @@ export type EmailContent = {
 export type EmailAttachment = {
   filename: string;
   content: string;
+  contentId?: string;
+  contentType?: string;
 };

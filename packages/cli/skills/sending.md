@@ -87,3 +87,12 @@ usesend emails list --start-date 2026-11-01T00:00:00Z --domain-id 3 --limit 50
 
 `latestStatus` in `emails list` is the newest event. BOUNCED/FAILED/REJECTED
 events carry the reason in `data`. SUPPRESSED = recipient on the suppression list.
+
+## Inline images
+
+Use `emails send --file payload.json` (or `emails batch --file batch.json`)
+with attachment fields `filename`, base64 `content`, optional `contentId` and
+optional `contentType`. For example, `contentId: "torch@site"` matches
+`<img src="cid:torch@site">` in HTML. Supply the ID without angle brackets.
+`contentType: "image/png"` overrides inference from the filename.
+Attachments with a content ID are inline; `--attach path` adds ordinary files.

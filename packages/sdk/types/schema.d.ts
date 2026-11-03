@@ -591,6 +591,16 @@ export interface paths {
                         attachments?: {
                             filename: string;
                             content: string;
+                            /**
+                             * @description Content-ID without angle brackets; reference it as cid:<contentId> in HTML
+                             * @example torch-light@giftsofprometheus
+                             */
+                            contentId?: string;
+                            /**
+                             * @description MIME type; inferred from filename when omitted
+                             * @example image/png
+                             */
+                            contentType?: string;
                         }[];
                         /** Format: date-time */
                         scheduledAt?: string;
@@ -660,6 +670,16 @@ export interface paths {
                         attachments?: {
                             filename: string;
                             content: string;
+                            /**
+                             * @description Content-ID without angle brackets; reference it as cid:<contentId> in HTML
+                             * @example torch-light@giftsofprometheus
+                             */
+                            contentId?: string;
+                            /**
+                             * @description MIME type; inferred from filename when omitted
+                             * @example image/png
+                             */
+                            contentType?: string;
                         }[];
                         /** Format: date-time */
                         scheduledAt?: string;

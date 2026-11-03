@@ -872,7 +872,19 @@
                       "type": "object",
                       "properties": {
                         "filename": { "type": "string", "minLength": 1 },
-                        "content": { "type": "string", "minLength": 1 }
+                        "content": { "type": "string", "minLength": 1 },
+                        "contentId": {
+                          "type": "string",
+                          "pattern": "^[^\\s<>]+$",
+                          "description": "Content-ID without angle brackets; reference it as cid:<contentId> in HTML",
+                          "example": "torch-light@giftsofprometheus"
+                        },
+                        "contentType": {
+                          "type": "string",
+                          "pattern": "^[a-zA-Z0-9!#$%&'*+.^_`|~-]+/[a-zA-Z0-9!#$%&'*+.^_`|~-]+$",
+                          "description": "MIME type; inferred from filename when omitted",
+                          "example": "image/png"
+                        }
                       },
                       "required": ["filename", "content"]
                     },
@@ -987,7 +999,19 @@
                         "type": "object",
                         "properties": {
                           "filename": { "type": "string", "minLength": 1 },
-                          "content": { "type": "string", "minLength": 1 }
+                          "content": { "type": "string", "minLength": 1 },
+                          "contentId": {
+                            "type": "string",
+                            "pattern": "^[^\\s<>]+$",
+                            "description": "Content-ID without angle brackets; reference it as cid:<contentId> in HTML",
+                            "example": "torch-light@giftsofprometheus"
+                          },
+                          "contentType": {
+                            "type": "string",
+                            "pattern": "^[a-zA-Z0-9!#$%&'*+.^_`|~-]+/[a-zA-Z0-9!#$%&'*+.^_`|~-]+$",
+                            "description": "MIME type; inferred from filename when omitted",
+                            "example": "image/png"
+                          }
                         },
                         "required": ["filename", "content"]
                       },
