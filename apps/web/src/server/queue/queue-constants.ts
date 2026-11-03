@@ -6,6 +6,7 @@ export const CAMPAIGN_SCHEDULER_QUEUE = "campaign-scheduler";
 export const DOMAIN_VERIFICATION_QUEUE = "domain-verification";
 export const WEBHOOK_DISPATCH_QUEUE = "webhook-dispatch";
 export const WEBHOOK_CLEANUP_QUEUE = "webhook-cleanup";
+export const POSTBOX_EVENTS_QUEUE = "postbox-events";
 
 export const DEFAULT_QUEUE_OPTIONS = {
   removeOnComplete: true,

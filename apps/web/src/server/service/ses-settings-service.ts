@@ -8,6 +8,7 @@ import { EmailQueueService } from "./email-queue-service";
 import { smallNanoid } from "../nanoid";
 import { logger } from "../logger/log";
 import { sesRegionSchema } from "~/lib/zod/ses-setting-schema";
+import { getPostboxStreamArn, isPostbox } from "~/server/aws/postbox";
 
 const GENERAL_EVENTS: EventType[] = [
   "BOUNCE",
@@ -76,12 +77,19 @@ export class SesSettingsService {
       ? usesendUrl.substring(0, usesendUrl.length - 1)
       : usesendUrl;
 
-    const usesendUrlValidation = await isValidUsesendUrl(parsedUrl);
+    // Postbox delivers events to a YDS stream that useSend reads itself, so
+    // there is no SNS topic and the callback URL does not have to be public.
+    const postbox = isPostbox();
+    const postboxStreamArn = postbox ? getPostboxStreamArn(region) : undefined;
 
-    if (!usesendUrlValidation.isValid) {
-      throw new Error(
-        `Callback URL: ${usesendUrl} is not valid, status: ${usesendUrlValidation.code} message:${usesendUrlValidation.error}`
-      );
+    if (!postbox) {
+      const usesendUrlValidation = await isValidUsesendUrl(parsedUrl);
+
+      if (!usesendUrlValidation.isValid) {
+        throw new Error(
+          `Callback URL: ${usesendUrl} is not valid, status: ${usesendUrlValidation.code} message:${usesendUrlValidation.error}`
+        );
+      }
     }
 
     const idPrefix = smallNanoid(10);
@@ -91,17 +99,22 @@ export class SesSettingsService {
 
     try {
       const topicName = `${idPrefix}-${region}-unsend`;
-      topicArn = await sns.createTopic(topicName, region);
-      if (!topicArn) {
-        throw new Error("Failed to create SNS topic");
+      if (!postbox) {
+        topicArn = await sns.createTopic(topicName, region);
+        if (!topicArn) {
+          throw new Error("Failed to create SNS topic");
+        }
       }
 
       const setting = await db.sesSetting.create({
         data: {
           region,
           callbackUrl: `${parsedUrl}/api/ses_callback`,
-          topic: topicName,
+          // For Postbox the "topic" is the YDS stream events are sent to.
+          topic: postboxStreamArn ?? topicName,
           topicArn,
+          // No SNS subscription to confirm: Postbox events are read from YDS.
+          callbackSuccess: postbox,
           sesEmailRateLimit: sendingRateLimit,
           transactionalQuota,
           idPrefix,
@@ -112,11 +125,13 @@ export class SesSettingsService {
 
       await this.invalidateCache();
 
-      await sns.subscribeEndpoint(
-        topicArn!,
-        `${setting.callbackUrl}`,
-        setting.region
-      );
+      if (topicArn) {
+        await sns.subscribeEndpoint(
+          topicArn,
+          `${setting.callbackUrl}`,
+          setting.region
+        );
+      }
 
       if (!setting) {
         throw new Error("Failed to create setting");
@@ -235,15 +250,23 @@ export class SesSettingsService {
  * 3. Open - for open tracking
  * 4. Full - for click and open tracking
  */
-async function registerConfigurationSet(setting: SesSetting) {
-  if (!setting.topicArn) {
-    throw new Error("Setting does not have a topic ARN");
+function getEventDestination(setting: SesSetting): ses.EventDestinationTarget {
+  if (setting.topicArn) {
+    return { type: "sns", topicArn: setting.topicArn };
   }
+  if (isPostbox()) {
+    return { type: "yds", streamArn: setting.topic };
+  }
+  throw new Error("Setting does not have a topic ARN");
+}
+
+async function registerConfigurationSet(setting: SesSetting) {
+  const destination = getEventDestination(setting);
 
   const configGeneral = `${setting.idPrefix}-${setting.region}-unsend-general`;
   const generalStatus = await ses.addWebhookConfiguration(
     configGeneral,
-    setting.topicArn,
+    destination,
     GENERAL_EVENTS,
     setting.region
   );
@@ -251,7 +274,7 @@ async function registerConfigurationSet(setting: SesSetting) {
   const configClick = `${setting.idPrefix}-${setting.region}-unsend-click`;
   const clickStatus = await ses.addWebhookConfiguration(
     configClick,
-    setting.topicArn,
+    destination,
     [...GENERAL_EVENTS, "CLICK"],
     setting.region
   );
@@ -259,7 +282,7 @@ async function registerConfigurationSet(setting: SesSetting) {
   const configOpen = `${setting.idPrefix}-${setting.region}-unsend-open`;
   const openStatus = await ses.addWebhookConfiguration(
     configOpen,
-    setting.topicArn,
+    destination,
     [...GENERAL_EVENTS, "OPEN"],
     setting.region
   );
@@ -267,7 +290,7 @@ async function registerConfigurationSet(setting: SesSetting) {
   const configFull = `${setting.idPrefix}-${setting.region}-unsend-full`;
   const fullStatus = await ses.addWebhookConfiguration(
     configFull,
-    setting.topicArn,
+    destination,
     [...GENERAL_EVENTS, "CLICK", "OPEN"],
     setting.region
   );

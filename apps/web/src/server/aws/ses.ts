@@ -21,6 +21,11 @@ import { getAwsCredentialOptions } from "~/server/aws/credentials";
 import { EmailContent } from "~/types";
 import { logger } from "../logger/log";
 import { buildHeaders } from "~/server/utils/email-headers";
+import {
+  filterSupportedEventTypes,
+  isPostbox,
+  POSTBOX_SES_ENDPOINT,
+} from "~/server/aws/postbox";
 import { parseFromAddress } from "~/server/utils/from-address";
 
 let accountId: string | undefined = undefined;
@@ -48,7 +53,8 @@ async function getIdentityArn(domain: string, region: string) {
 function getSesClient(region: string) {
   return new SESv2Client({
     region: region,
-    endpoint: env.AWS_SES_ENDPOINT,
+    endpoint:
+      env.AWS_SES_ENDPOINT ?? (isPostbox() ? POSTBOX_SES_ENDPOINT : undefined),
     ...getAwsCredentialOptions(),
   });
 }
@@ -97,12 +103,15 @@ export async function addDomain(
   });
   const response = await sesClient.send(command);
 
-  const emailIdentityCommand = new PutEmailIdentityMailFromAttributesCommand({
-    EmailIdentity: domain,
-    MailFromDomain: `mail.${domain}`,
-  });
-
-  const emailIdentityResponse = await sesClient.send(emailIdentityCommand);
+  // Postbox has no custom MAIL FROM domains (the API returns 404).
+  const emailIdentityResponse = isPostbox()
+    ? undefined
+    : await sesClient.send(
+        new PutEmailIdentityMailFromAttributesCommand({
+          EmailIdentity: domain,
+          MailFromDomain: `mail.${domain}`,
+        }),
+      );
 
   if (sesTenantId) {
     const tenantResourceAssociationCommand =
@@ -126,7 +135,8 @@ export async function addDomain(
 
   if (
     response.$metadata.httpStatusCode !== 200 ||
-    emailIdentityResponse.$metadata.httpStatusCode !== 200
+    (emailIdentityResponse &&
+      emailIdentityResponse.$metadata.httpStatusCode !== 200)
   ) {
     logger.error(
       { response, emailIdentityResponse },
@@ -279,9 +289,13 @@ export async function getAccount(region: string) {
   return response;
 }
 
+export type EventDestinationTarget =
+  | { type: "sns"; topicArn: string }
+  | { type: "yds"; streamArn: string };
+
 export async function addWebhookConfiguration(
   configName: string,
-  topicArn: string,
+  destination: EventDestinationTarget,
   eventTypes: EventType[],
   region: string
 ) {
@@ -302,10 +316,16 @@ export async function addWebhookConfiguration(
     EventDestinationName: "usesend_destination", // required
     EventDestination: {
       Enabled: true,
-      MatchingEventTypes: eventTypes,
-      SnsDestination: {
-        TopicArn: topicArn,
-      },
+      MatchingEventTypes: filterSupportedEventTypes(eventTypes),
+      ...(destination.type === "sns"
+        ? { SnsDestination: { TopicArn: destination.topicArn } }
+        : {
+            KinesisFirehoseDestination: {
+              DeliveryStreamArn: destination.streamArn,
+              // Ignored by Postbox, required by the SES API shape.
+              IamRoleArn: "arn:yc:iam:::unused",
+            },
+          }),
     },
   });
 

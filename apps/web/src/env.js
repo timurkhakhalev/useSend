@@ -39,6 +39,12 @@ export const env = createEnv({
     GOOGLE_CLIENT_SECRET: z.string().optional(),
     AWS_SES_ENDPOINT: z.string().optional(),
     AWS_SNS_ENDPOINT: z.string().optional(),
+    EMAIL_PROVIDER: z.enum(["ses", "postbox"]).default("ses"),
+    POSTBOX_YDS_ENDPOINT: z
+      .string()
+      .url()
+      .default("https://yds.serverless.yandexcloud.net"),
+    POSTBOX_YDS_STREAM: z.string().optional(),
     SNS_SIGNATURE_VERIFICATION: z
       .enum(["enforce", "log-only"])
       .default("enforce"),
@@ -115,6 +121,9 @@ export const env = createEnv({
     AWS_DEFAULT_REGION: process.env.AWS_DEFAULT_REGION,
     AWS_SES_ENDPOINT: process.env.AWS_SES_ENDPOINT,
     AWS_SNS_ENDPOINT: process.env.AWS_SNS_ENDPOINT,
+    EMAIL_PROVIDER: process.env.EMAIL_PROVIDER,
+    POSTBOX_YDS_ENDPOINT: process.env.POSTBOX_YDS_ENDPOINT,
+    POSTBOX_YDS_STREAM: process.env.POSTBOX_YDS_STREAM,
     SNS_SIGNATURE_VERIFICATION: process.env.SNS_SIGNATURE_VERIFICATION,
     API_RATE_LIMIT: process.env.API_RATE_LIMIT,
     AUTH_EMAIL_RATE_LIMIT: process.env.AUTH_EMAIL_RATE_LIMIT,

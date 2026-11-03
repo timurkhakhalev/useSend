@@ -2,6 +2,7 @@ import dns from "dns";
 import util from "util";
 import * as tldts from "tldts";
 import * as ses from "~/server/aws/ses";
+import { isPostbox, POSTBOX_SPF_INCLUDE } from "~/server/aws/postbox";
 import { db } from "~/server/db";
 import { env } from "~/env";
 import { renderDomainVerificationStatusEmail } from "~/server/email-templates";
@@ -55,7 +56,51 @@ function parseDomainStatus(status?: string | null): DomainStatus {
   return DomainStatus.NOT_STARTED;
 }
 
+/**
+ * Postbox signs with the BYODKIM key and has no custom MAIL FROM domain, so
+ * SPF goes on the sending domain itself and there is no MX record.
+ */
+function buildPostboxDnsRecords(domain: Domain): DomainDnsRecord[] {
+  const subdomainSuffix = domain.subdomain ? `.${domain.subdomain}` : "";
+  const dkimSelector = domain.dkimSelector ?? "usesend";
+  const spfStatus = parseDomainStatus(domain.spfDetails);
+  const dkimStatus = parseDomainStatus(domain.dkimStatus);
+  const dmarcStatus = domain.dmarcAdded
+    ? DomainStatus.SUCCESS
+    : DomainStatus.NOT_STARTED;
+
+  return [
+    {
+      type: "TXT",
+      name: `${dkimSelector}._domainkey${subdomainSuffix}`,
+      // Postbox only accepts this exact format; "v=DKIM1; k=rsa; p=..." fails.
+      value: `v=DKIM1;h=sha256;k=rsa;p=${domain.publicKey}`,
+      ttl: "Auto",
+      status: dkimStatus,
+    },
+    {
+      type: "TXT",
+      name: domain.subdomain ?? "@",
+      value: `v=spf1 include:${POSTBOX_SPF_INCLUDE} ~all`,
+      ttl: "Auto",
+      status: spfStatus,
+    },
+    {
+      type: "TXT",
+      name: "_dmarc",
+      value: "v=DMARC1; p=none;",
+      ttl: "Auto",
+      status: dmarcStatus,
+      recommended: true,
+    },
+  ];
+}
+
 function buildDnsRecords(domain: Domain): DomainDnsRecord[] {
+  if (isPostbox()) {
+    return buildPostboxDnsRecords(domain);
+  }
+
   const subdomainSuffix = domain.subdomain ? `.${domain.subdomain}` : "";
   const mailDomain = `mail${subdomainSuffix}`;
   const dkimSelector = domain.dkimSelector ?? "usesend";
@@ -480,8 +525,9 @@ export async function refreshDomainVerification(
     domain.region,
   );
   const dkimStatus = domainIdentity.DkimAttributes?.Status?.toString();
-  const spfDetails =
-    domainIdentity.MailFromAttributes?.MailFromDomainStatus?.toString();
+  const spfDetails = isPostbox()
+    ? await getPostboxSpfStatus(domain.name)
+    : domainIdentity.MailFromAttributes?.MailFromDomainStatus?.toString();
   const verificationError =
     domainIdentity.VerificationInfo?.ErrorType?.toString() ?? null;
   const verificationStatus = parseDomainStatus(
@@ -649,6 +695,26 @@ export async function getDomains(
   });
 
   return domains.map((d) => withDnsRecords(d));
+}
+
+/**
+ * Postbox does not report SPF status, so check the domain's TXT records.
+ */
+async function getPostboxSpfStatus(domain: string): Promise<DomainStatus> {
+  try {
+    const records = await dnsResolveTxt(domain);
+    const hasPostboxSpf = records
+      .map((chunks) => chunks.join(""))
+      .some(
+        (record) =>
+          record.toLowerCase().startsWith("v=spf1") &&
+          record.includes(`include:${POSTBOX_SPF_INCLUDE}`),
+      );
+    return hasPostboxSpf ? DomainStatus.SUCCESS : DomainStatus.PENDING;
+  } catch (error) {
+    logger.info({ err: error, domain }, "No SPF record found for domain");
+    return DomainStatus.PENDING;
+  }
 }
 
 async function getDmarcRecord(domain: string) {

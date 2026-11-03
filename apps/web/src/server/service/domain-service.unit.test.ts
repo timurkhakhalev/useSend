@@ -10,6 +10,7 @@ const {
   mockLoggerError,
   mockRenderDomainVerificationStatusEmail,
   mockResolveTxt,
+  mockIsPostbox,
 } = vi.hoisted(() => ({
   mockDb: {
     domain: {
@@ -32,6 +33,7 @@ const {
   mockLoggerError: vi.fn(),
   mockRenderDomainVerificationStatusEmail: vi.fn(),
   mockResolveTxt: vi.fn(),
+  mockIsPostbox: vi.fn(),
 }));
 
 function wasLastNotifiedStatusStored() {
@@ -52,6 +54,11 @@ vi.mock("~/server/db", () => ({
 
 vi.mock("~/server/aws/ses", () => ({
   getDomainIdentity: mockGetDomainIdentity,
+}));
+
+vi.mock("~/server/aws/postbox", () => ({
+  isPostbox: mockIsPostbox,
+  POSTBOX_SPF_INCLUDE: "spf.postbox.yandexcloud.net",
 }));
 
 vi.mock("~/server/service/webhook-service", () => ({
@@ -131,6 +138,8 @@ describe("domain-service", () => {
     mockLoggerError.mockReset();
     mockRenderDomainVerificationStatusEmail.mockReset();
     mockResolveTxt.mockReset();
+    mockIsPostbox.mockReset();
+    mockIsPostbox.mockReturnValue(false);
 
     mockRenderDomainVerificationStatusEmail.mockResolvedValue(
       "<p>domain status</p>",
@@ -434,6 +443,104 @@ describe("domain-service", () => {
     ]);
 
     await expect(isDomainVerificationDue(domain)).resolves.toBe(false);
+  });
+
+  describe("postbox mode", () => {
+    function mockTxtRecords(records: Record<string, string[][]>) {
+      mockResolveTxt.mockImplementation(
+        (name: string, cb: (err: Error | null, value?: string[][]) => void) => {
+          const value = records[name];
+          if (value) {
+            cb(null, value);
+          } else {
+            cb(
+              Object.assign(new Error("queryTxt ENODATA"), { code: "ENODATA" }),
+            );
+          }
+        },
+      );
+    }
+
+    beforeEach(() => {
+      mockIsPostbox.mockReturnValue(true);
+      mockRedis.mget.mockResolvedValue([null, null, null]);
+      mockGetDomainIdentity.mockResolvedValue({
+        DkimAttributes: { Status: DomainStatus.SUCCESS },
+        VerificationInfo: { ErrorType: null },
+        VerificationStatus: DomainStatus.SUCCESS,
+      });
+      mockDb.domain.update.mockImplementation(({ data }) =>
+        Promise.resolve(
+          createDomain({
+            name: "mail.example.com",
+            subdomain: "mail",
+            ...data,
+          }),
+        ),
+      );
+    });
+
+    it("checks SPF in DNS because Postbox has no MAIL FROM status", async () => {
+      mockTxtRecords({
+        "mail.example.com": [
+          ["v=spf1 include:spf.postbox.", "yandexcloud.net ~all"],
+        ],
+        "_dmarc.example.com": [["v=DMARC1; p=none;"]],
+      });
+
+      const result = await refreshDomainVerification(
+        createDomain({ name: "mail.example.com", subdomain: "mail" }),
+      );
+
+      expect(mockDb.domain.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            spfDetails: DomainStatus.SUCCESS,
+            isVerifying: false,
+          }),
+        }),
+      );
+      expect(result.spfDetails).toBe(DomainStatus.SUCCESS);
+    });
+
+    it("keeps verifying while the Postbox SPF record is missing", async () => {
+      mockTxtRecords({
+        "mail.example.com": [["v=spf1 include:amazonses.com ~all"]],
+      });
+
+      const result = await refreshDomainVerification(
+        createDomain({ name: "mail.example.com", subdomain: "mail" }),
+      );
+
+      expect(result.spfDetails).toBe(DomainStatus.PENDING);
+      expect(mockDb.domain.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ isVerifying: true }),
+        }),
+      );
+    });
+
+    it("returns Postbox DNS records without MX and MAIL FROM", async () => {
+      mockTxtRecords({});
+
+      const result = await refreshDomainVerification(
+        createDomain({ name: "mail.example.com", subdomain: "mail" }),
+      );
+
+      expect(result.dnsRecords).toEqual([
+        expect.objectContaining({
+          type: "TXT",
+          name: "usesend._domainkey.mail",
+          value: "v=DKIM1;h=sha256;k=rsa;p=public-key",
+        }),
+        expect.objectContaining({
+          type: "TXT",
+          name: "mail",
+          value: "v=spf1 include:spf.postbox.yandexcloud.net ~all",
+        }),
+        expect.objectContaining({ type: "TXT", name: "_dmarc" }),
+      ]);
+    });
   });
 
   describe("validateDomainFromEmail", () => {

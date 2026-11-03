@@ -5,6 +5,7 @@ import { env } from "~/env";
 import { createTRPCRouter, adminProcedure } from "~/server/api/trpc";
 import { SesSettingsService } from "~/server/service/ses-settings-service";
 import { getAccount } from "~/server/aws/ses";
+import { isPostbox } from "~/server/aws/postbox";
 import { db } from "~/server/db";
 import { sendMail } from "~/server/mailer";
 import { logger } from "~/server/logger/log";
@@ -77,6 +78,10 @@ export const adminRouter = createTRPCRouter({
       }),
     )
     .query(async ({ input }) => {
+      // Postbox has no GetAccount; the form falls back to the default rate.
+      if (isPostbox()) {
+        return null;
+      }
       const acc = await getAccount(input.region);
       return acc.SendQuota?.MaxSendRate;
     }),

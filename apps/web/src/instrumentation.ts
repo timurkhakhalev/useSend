@@ -30,6 +30,12 @@ export async function register() {
       );
 
       await initDomainVerificationJob();
+
+      const { initPostboxEventsJob } = await import(
+        "~/server/jobs/postbox-events-job"
+      );
+
+      await initPostboxEventsJob();
     }
 
     if (isEmailCleanupEnabled()) {
