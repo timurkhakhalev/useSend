@@ -11,15 +11,21 @@ const {
   mockRenderDomainVerificationStatusEmail,
   mockResolveTxt,
   mockIsPostbox,
+  mockRecreateDomainIdentity,
+  mockAddDomain,
 } = vi.hoisted(() => ({
   mockDb: {
     domain: {
+      create: vi.fn(),
       update: vi.fn(),
       findUnique: vi.fn(),
       findFirst: vi.fn(),
     },
     teamUser: {
       findMany: vi.fn(),
+    },
+    domainDkimKey: {
+      findUnique: vi.fn(),
     },
   },
   mockGetDomainIdentity: vi.fn(),
@@ -28,12 +34,16 @@ const {
     mget: vi.fn(),
     set: vi.fn(),
     del: vi.fn(),
+    incr: vi.fn(),
+    expire: vi.fn(),
   },
   mockSendMail: vi.fn(),
   mockLoggerError: vi.fn(),
   mockRenderDomainVerificationStatusEmail: vi.fn(),
   mockResolveTxt: vi.fn(),
   mockIsPostbox: vi.fn(),
+  mockRecreateDomainIdentity: vi.fn(),
+  mockAddDomain: vi.fn(),
 }));
 
 function wasLastNotifiedStatusStored() {
@@ -54,6 +64,21 @@ vi.mock("~/server/db", () => ({
 
 vi.mock("~/server/aws/ses", () => ({
   getDomainIdentity: mockGetDomainIdentity,
+  recreateDomainIdentity: mockRecreateDomainIdentity,
+  addDomain: mockAddDomain,
+}));
+
+vi.mock("./ses-settings-service", () => ({
+  SesSettingsService: { getSetting: vi.fn(async () => ({ id: "setting-1" })) },
+}));
+vi.mock("./limit-service", () => ({
+  LimitService: {
+    checkDomainLimit: vi.fn(async () => ({ isLimitReached: false })),
+  },
+}));
+
+vi.mock("~/env", () => ({
+  env: { NEXTAUTH_SECRET: "test-secret", NEXTAUTH_URL: "https://x.test" },
 }));
 
 vi.mock("~/server/aws/postbox", () => ({
@@ -80,6 +105,7 @@ vi.mock("~/server/logger/log", () => ({
   logger: {
     error: mockLoggerError,
     info: vi.fn(),
+    warn: vi.fn(),
   },
 }));
 
@@ -92,9 +118,12 @@ import {
   DOMAIN_VERIFIED_RECHECK_MS,
   isDomainVerificationDue,
   refreshDomainVerification,
+  createDomain as persistDomain,
   validateApiKeyDomainAccess,
   validateDomainFromEmail,
+  POSTBOX_RECREATE_MAX_PER_DAY,
 } from "~/server/service/domain-service";
+import { decryptSecret, encryptSecret } from "~/server/utils/secret-encryption";
 
 function createDomain(overrides: Partial<Domain> = {}): Domain {
   return {
@@ -140,6 +169,12 @@ describe("domain-service", () => {
     mockResolveTxt.mockReset();
     mockIsPostbox.mockReset();
     mockIsPostbox.mockReturnValue(false);
+    mockRecreateDomainIdentity.mockReset();
+    mockDb.domainDkimKey.findUnique.mockReset();
+    mockDb.domainDkimKey.findUnique.mockResolvedValue(null);
+    mockRedis.incr.mockReset();
+    mockRedis.incr.mockResolvedValue(1);
+    mockRedis.expire.mockReset();
 
     mockRenderDomainVerificationStatusEmail.mockResolvedValue(
       "<p>domain status</p>",
@@ -541,6 +576,148 @@ describe("domain-service", () => {
         expect.objectContaining({ type: "TXT", name: "_dmarc" }),
       ]);
     });
+
+    describe("re-verification by recreating the identity", () => {
+      const dkimName = "usesend._domainkey.mail.example.com";
+      const dkimValue = "v=DKIM1;h=sha256;k=rsa;p=public-key";
+      const failedIdentity = {
+        DkimAttributes: { Status: DomainStatus.FAILED },
+        VerificationInfo: { ErrorType: null },
+        VerificationStatus: DomainStatus.FAILED,
+      };
+      const recreatedIdentity = {
+        DkimAttributes: { Status: DomainStatus.NOT_STARTED },
+        VerificationInfo: { ErrorType: null },
+        VerificationStatus: DomainStatus.NOT_STARTED,
+      };
+      const domain = () =>
+        createDomain({
+          name: "mail.example.com",
+          subdomain: "mail",
+          status: DomainStatus.FAILED,
+        });
+
+      beforeEach(() => {
+        mockDb.domainDkimKey.findUnique.mockResolvedValue({
+          domainId: 42,
+          encryptedPrivateKey: encryptSecret(
+            "private-key",
+            "domain-dkim-private-key",
+          ),
+        });
+        mockGetDomainIdentity
+          .mockReset()
+          .mockResolvedValueOnce(failedIdentity)
+          .mockResolvedValueOnce(recreatedIdentity);
+      });
+
+      it("recreates the identity with the stored key when the DKIM record is correct", async () => {
+        mockTxtRecords({ [dkimName]: [[dkimValue]] });
+
+        const result = await refreshDomainVerification(domain());
+
+        expect(mockRecreateDomainIdentity).toHaveBeenCalledWith(
+          "mail.example.com",
+          "us-east-1",
+          "usesend",
+          "private-key",
+        );
+        expect(result.status).toBe(DomainStatus.NOT_STARTED);
+        expect(mockDb.domain.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ isVerifying: true }),
+          }),
+        );
+        // The recreated identity is transient: no status email.
+        expect(mockSendMail).not.toHaveBeenCalled();
+      });
+
+      it("does not recreate when the DKIM record does not match", async () => {
+        mockTxtRecords({
+          [dkimName]: [["v=DKIM1; k=rsa; p=public-key"]],
+        });
+
+        const result = await refreshDomainVerification(domain());
+
+        expect(mockRecreateDomainIdentity).not.toHaveBeenCalled();
+        expect(result.status).toBe(DomainStatus.FAILED);
+      });
+
+      it("does not recreate domains without a stored key", async () => {
+        mockTxtRecords({ [dkimName]: [[dkimValue]] });
+        mockDb.domainDkimKey.findUnique.mockResolvedValue(null);
+
+        await refreshDomainVerification(domain());
+
+        expect(mockRecreateDomainIdentity).not.toHaveBeenCalled();
+      });
+
+      it("does not recreate again during the cooldown", async () => {
+        mockTxtRecords({ [dkimName]: [[dkimValue]] });
+        mockRedis.set.mockImplementation((key: string) =>
+          Promise.resolve(key.includes("postbox-recreate-lock") ? null : "OK"),
+        );
+
+        await refreshDomainVerification(domain());
+
+        expect(mockRecreateDomainIdentity).not.toHaveBeenCalled();
+      });
+
+      it("stops after the daily cap", async () => {
+        mockTxtRecords({ [dkimName]: [[dkimValue]] });
+        mockRedis.incr.mockResolvedValue(POSTBOX_RECREATE_MAX_PER_DAY + 1);
+
+        await refreshDomainVerification(domain());
+
+        expect(mockRecreateDomainIdentity).not.toHaveBeenCalled();
+      });
+
+      it("skips keys that cannot be decrypted", async () => {
+        mockTxtRecords({ [dkimName]: [[dkimValue]] });
+        mockDb.domainDkimKey.findUnique.mockResolvedValue({
+          domainId: 42,
+          encryptedPrivateKey: "v1:broken:value:here",
+        });
+
+        await refreshDomainVerification(domain());
+
+        expect(mockRecreateDomainIdentity).not.toHaveBeenCalled();
+        expect(mockLoggerError).toHaveBeenCalled();
+      });
+
+      it("restores an identity that a failed recreate left missing", async () => {
+        mockTxtRecords({ [dkimName]: [[dkimValue]] });
+        mockGetDomainIdentity
+          .mockReset()
+          .mockRejectedValueOnce(
+            Object.assign(new Error("NotFound"), { name: "NotFoundException" }),
+          )
+          .mockResolvedValueOnce(recreatedIdentity);
+
+        const result = await refreshDomainVerification(domain());
+
+        expect(mockRecreateDomainIdentity).toHaveBeenCalledTimes(1);
+        expect(result.status).toBe(DomainStatus.NOT_STARTED);
+      });
+    });
+  });
+
+  it("persists a new Postbox DKIM key encrypted without returning it with the domain", async () => {
+    mockIsPostbox.mockReturnValue(true);
+    mockAddDomain.mockResolvedValue({
+      publicKey: "public-key",
+      privateKey: "private-key",
+    });
+    mockDb.domain.create.mockResolvedValue(createDomain());
+    const result = await persistDomain(7, "example.com", "ru-central1");
+    const data = mockDb.domain.create.mock.calls[0]![0].data;
+    const ciphertext = data.dkimKey.create.encryptedPrivateKey;
+    expect(ciphertext).not.toContain("private-key");
+    expect(decryptSecret(ciphertext, "domain-dkim-private-key")).toBe(
+      "private-key",
+    );
+    expect(result).not.toHaveProperty("dkimKey");
+    expect(result).not.toHaveProperty("privateKey");
   });
 
   describe("validateDomainFromEmail", () => {

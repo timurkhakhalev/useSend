@@ -71,6 +71,8 @@ export const adminRouter = createTRPCRouter({
 
   getDefaultSesRegion: adminProcedure.query(() => env.AWS_DEFAULT_REGION),
 
+  getEmailProvider: adminProcedure.query(() => env.EMAIL_PROVIDER),
+
   getQuotaForRegion: adminProcedure
     .input(
       z.object({
@@ -90,7 +92,7 @@ export const adminRouter = createTRPCRouter({
     .input(
       z.object({
         region: sesRegionSchema,
-        usesendUrl: z.string().url(),
+        usesendUrl: z.string().url().or(z.literal("")),
         sendRate: z.number(),
         transactionalQuota: z.number(),
       }),

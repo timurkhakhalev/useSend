@@ -1,3 +1,5 @@
+import fixtures from "~/test/fixtures/postbox-events.json";
+import { SuppressionService } from "./suppression-service";
 import { EmailStatus } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SesEvent } from "~/types/aws-types";
@@ -183,4 +185,64 @@ describe("parseSesHook dashboard engagement usage", () => {
       expect(mockDb.emailEvent.create).toHaveBeenCalledTimes(2);
     },
   );
+});
+
+describe("real Postbox events", () => {
+  beforeEach(() => {
+    mockDb.email.findUnique.mockResolvedValue(email);
+    mockDb.emailEvent.findFirst.mockResolvedValue(null);
+  });
+
+  it("records a permanent bounce and suppresses the affected recipient", async () => {
+    await parseSesHook(fixtures.Bounce as unknown as SesEvent);
+    expect(mockDb.$executeRaw.mock.calls[0]).toContain(EmailStatus.BOUNCED);
+    expect(SuppressionService.addSuppression).toHaveBeenCalledWith({
+      email: "no-such-user@example.com",
+      teamId: email.teamId,
+      reason: "HARD_BOUNCE",
+      source: email.id,
+    });
+    expect(mockDb.emailEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: EmailStatus.BOUNCED,
+          data: fixtures.Bounce.bounce,
+        }),
+      }),
+    );
+    expect(mockWebhookEmit).toHaveBeenCalledWith(
+      email.teamId,
+      "email.bounced",
+      expect.objectContaining({
+        bounce: expect.objectContaining({ subType: "General" }),
+      }),
+      { domainId: email.domainId },
+    );
+  });
+
+  it.each([
+    [fixtures.Open, EmailStatus.OPENED],
+    [fixtures.Click, EmailStatus.CLICKED],
+  ] as const)("records engagement from Postbox", async (event, status) => {
+    await parseSesHook(event as unknown as SesEvent);
+    expect(mockDb.emailEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status }),
+      }),
+    );
+  });
+
+  it("resolves the Postbox title-cased custom header during a send race", async () => {
+    mockDb.email.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(email);
+    await parseSesHook(fixtures.Open as unknown as SesEvent);
+    expect(mockDb.email.findUnique).toHaveBeenNthCalledWith(2, {
+      where: { id: "email-tracked-1" },
+    });
+    expect(mockDb.email.update).toHaveBeenCalledWith({
+      where: { id: email.id },
+      data: { sesEmailId: fixtures.Open.mail.messageId },
+    });
+  });
 });

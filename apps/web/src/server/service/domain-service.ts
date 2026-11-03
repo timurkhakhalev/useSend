@@ -20,11 +20,15 @@ import { LimitService } from "./limit-service";
 import type { DomainDnsRecord } from "~/types/domain";
 import { parseFromAddress } from "~/server/utils/from-address";
 import { WebhookService } from "./webhook-service";
+import { decryptSecret, encryptSecret } from "~/server/utils/secret-encryption";
 
 const DOMAIN_STATUS_VALUES = new Set(Object.values(DomainStatus));
 export const DOMAIN_UNVERIFIED_RECHECK_MS = 6 * 60 * 60 * 1000;
 export const DOMAIN_VERIFIED_RECHECK_MS = 30 * 24 * 60 * 60 * 1000;
 const VERIFIED_DOMAIN_STATUSES = new Set<DomainStatus>([DomainStatus.SUCCESS]);
+const DKIM_KEY_ENCRYPTION_PURPOSE = "domain-dkim-private-key";
+export const POSTBOX_RECREATE_COOLDOWN_SECONDS = 10 * 60;
+export const POSTBOX_RECREATE_MAX_PER_DAY = 5;
 
 type DomainVerificationState = {
   hasEverVerified: boolean;
@@ -60,6 +64,11 @@ function parseDomainStatus(status?: string | null): DomainStatus {
  * Postbox signs with the BYODKIM key and has no custom MAIL FROM domain, so
  * SPF goes on the sending domain itself and there is no MX record.
  */
+export function getPostboxDkimRecordValue(publicKey: string) {
+  // Postbox only accepts this exact format; "v=DKIM1; k=rsa; p=..." fails.
+  return `v=DKIM1;h=sha256;k=rsa;p=${publicKey}`;
+}
+
 function buildPostboxDnsRecords(domain: Domain): DomainDnsRecord[] {
   const subdomainSuffix = domain.subdomain ? `.${domain.subdomain}` : "";
   const dkimSelector = domain.dkimSelector ?? "usesend";
@@ -73,8 +82,7 @@ function buildPostboxDnsRecords(domain: Domain): DomainDnsRecord[] {
     {
       type: "TXT",
       name: `${dkimSelector}._domainkey${subdomainSuffix}`,
-      // Postbox only accepts this exact format; "v=DKIM1; k=rsa; p=..." fails.
-      value: `v=DKIM1;h=sha256;k=rsa;p=${domain.publicKey}`,
+      value: getPostboxDkimRecordValue(domain.publicKey),
       ttl: "Auto",
       status: dkimStatus,
     },
@@ -455,17 +463,23 @@ export async function createDomain(
 
   const subdomain = tldts.getSubdomain(name);
   const dkimSelector = "usesend";
-  const publicKey = await ses.addDomain(
+  const { publicKey, privateKey } = await ses.addDomain(
     name,
     region,
     sesTenantId,
     dkimSelector,
   );
+  const encryptedPrivateKey = isPostbox()
+    ? encryptSecret(privateKey, DKIM_KEY_ENCRYPTION_PURPOSE)
+    : undefined;
 
   const domain = await db.domain.create({
     data: {
       name,
       publicKey,
+      ...(encryptedPrivateKey
+        ? { dkimKey: { create: { encryptedPrivateKey } } }
+        : {}),
       teamId,
       subdomain,
       region,
@@ -520,10 +534,31 @@ export async function refreshDomainVerification(
 
   const verificationState = await getDomainVerificationState(domain.id);
   const previousStatus = domain.status;
-  const domainIdentity = await ses.getDomainIdentity(
-    domain.name,
-    domain.region,
-  );
+  let domainIdentity: Awaited<ReturnType<typeof ses.getDomainIdentity>>;
+  let recreatedIdentity: typeof domainIdentity | null = null;
+  try {
+    domainIdentity = await ses.getDomainIdentity(domain.name, domain.region);
+  } catch (error) {
+    // A recreate that deleted the identity but failed to create it again
+    // leaves no identity behind; try to restore it.
+    const isMissing =
+      error instanceof Error && error.name === "NotFoundException";
+    recreatedIdentity =
+      isPostbox() && isMissing
+        ? await maybeRecreatePostboxIdentity(domain, DomainStatus.FAILED)
+        : null;
+    if (!recreatedIdentity) {
+      throw error;
+    }
+    domainIdentity = recreatedIdentity;
+  }
+  if (isPostbox() && !recreatedIdentity) {
+    recreatedIdentity = await maybeRecreatePostboxIdentity(
+      domain,
+      domainIdentity.DkimAttributes?.Status?.toString(),
+    );
+    domainIdentity = recreatedIdentity ?? domainIdentity;
+  }
   const dkimStatus = domainIdentity.DkimAttributes?.Status?.toString();
   const spfDetails = isPostbox()
     ? await getPostboxSpfStatus(domain.name)
@@ -564,6 +599,9 @@ export async function refreshDomainVerification(
   }
 
   if (
+    // A recreated Postbox identity is in a transient state; wait for the
+    // next check instead of notifying about it.
+    !recreatedIdentity &&
     shouldSendDomainStatusNotification({
       previousStatus,
       currentStatus: updatedDomain.status,
@@ -695,6 +733,105 @@ export async function getDomains(
   });
 
   return domains.map((d) => withDnsRecords(d));
+}
+
+/**
+ * Postbox checks DKIM once, right after the identity is created, and never
+ * again. When the check failed (usually because the record was added later)
+ * but the record is now correct, delete and recreate the identity with the
+ * stored key so Postbox checks again.
+ *
+ * Returns the fresh identity, or null when nothing was done. Guarded by a
+ * per-domain cooldown and a daily cap so a domain that keeps failing cannot
+ * loop or hit Postbox rate limits.
+ */
+async function maybeRecreatePostboxIdentity(
+  domain: Domain,
+  dkimStatus: string | undefined,
+) {
+  if (dkimStatus !== DomainStatus.FAILED) {
+    return null;
+  }
+
+  const dkimKey = await db.domainDkimKey.findUnique({
+    where: { domainId: domain.id },
+  });
+  if (!dkimKey) {
+    // Domains created before keys were stored cannot be recreated.
+    return null;
+  }
+
+  const selector = domain.dkimSelector ?? "usesend";
+  const recordName = `${selector}._domainkey.${domain.name}`;
+  const expected = getPostboxDkimRecordValue(domain.publicKey);
+  let records: string[][];
+  try {
+    records = await dnsResolveTxt(recordName);
+  } catch (error) {
+    logger.info(
+      { err: error, domainId: domain.id, recordName },
+      "[DomainService]: DKIM record not found, not recreating Postbox identity",
+    );
+    return null;
+  }
+  if (!records.some((chunks) => chunks.join("").trim() === expected)) {
+    return null;
+  }
+
+  const redis = getRedis();
+  const cooldown = await redis.set(
+    getDomainVerificationKey("postbox-recreate-lock", domain.id),
+    "1",
+    "EX",
+    POSTBOX_RECREATE_COOLDOWN_SECONDS,
+    "NX",
+  );
+  if (cooldown !== "OK") {
+    return null;
+  }
+
+  const countKey = getDomainVerificationKey(
+    "postbox-recreate-count",
+    domain.id,
+  );
+  const attempts = await redis.incr(countKey);
+  if (attempts === 1) {
+    await redis.expire(countKey, 24 * 60 * 60);
+  }
+  if (attempts > POSTBOX_RECREATE_MAX_PER_DAY) {
+    logger.warn(
+      { domainId: domain.id, attempts },
+      "[DomainService]: Postbox identity recreated too often today, skipping",
+    );
+    return null;
+  }
+
+  let privateKey: string;
+  try {
+    privateKey = decryptSecret(
+      dkimKey.encryptedPrivateKey,
+      DKIM_KEY_ENCRYPTION_PURPOSE,
+    );
+  } catch (error) {
+    logger.error(
+      { err: error, domainId: domain.id },
+      "[DomainService]: Cannot decrypt the stored DKIM key (was NEXTAUTH_SECRET changed?)",
+    );
+    return null;
+  }
+
+  logger.info(
+    { domainId: domain.id, attempts },
+    "[DomainService]: DKIM failed but the record is correct, recreating Postbox identity",
+  );
+  await ses.recreateDomainIdentity(
+    domain.name,
+    domain.region,
+    selector,
+    privateKey,
+  );
+
+  return ses.getDomainIdentity(domain.name, domain.region);
 }
 
 /**

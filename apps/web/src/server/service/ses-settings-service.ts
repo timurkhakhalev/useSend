@@ -27,7 +27,7 @@ export class SesSettingsService {
   private static initialized = false;
 
   public static async getSetting(
-    region = env.AWS_DEFAULT_REGION
+    region = env.AWS_DEFAULT_REGION,
   ): Promise<SesSetting | null> {
     const normalizedRegion = sesRegionSchema.parse(region);
 
@@ -73,13 +73,15 @@ export class SesSettingsService {
       throw new Error(`SesSetting for region ${region} already exists`);
     }
 
+    const postbox = isPostbox();
+    if (postbox) usesendUrl = env.NEXTAUTH_URL;
+
     const parsedUrl = usesendUrl.endsWith("/")
       ? usesendUrl.substring(0, usesendUrl.length - 1)
       : usesendUrl;
 
     // Postbox delivers events to a YDS stream that useSend reads itself, so
     // there is no SNS topic and the callback URL does not have to be public.
-    const postbox = isPostbox();
     const postboxStreamArn = postbox ? getPostboxStreamArn(region) : undefined;
 
     if (!postbox) {
@@ -87,7 +89,7 @@ export class SesSettingsService {
 
       if (!usesendUrlValidation.isValid) {
         throw new Error(
-          `Callback URL: ${usesendUrl} is not valid, status: ${usesendUrlValidation.code} message:${usesendUrlValidation.error}`
+          `Callback URL: ${usesendUrl} is not valid, status: ${usesendUrlValidation.code} message:${usesendUrlValidation.error}`,
         );
       }
     }
@@ -129,7 +131,7 @@ export class SesSettingsService {
         await sns.subscribeEndpoint(
           topicArn,
           `${setting.callbackUrl}`,
-          setting.region
+          setting.region,
         );
       }
 
@@ -142,14 +144,14 @@ export class SesSettingsService {
       EmailQueueService.initializeQueue(
         region,
         setting.sesEmailRateLimit,
-        setting.transactionalQuota
+        setting.transactionalQuota,
       );
       logger.info(
         {
           transactionalQueue: EmailQueueService.transactionalQueue,
           marketingQueue: EmailQueueService.marketingQueue,
         },
-        "Email queues initialized"
+        "Email queues initialized",
       );
 
       await this.invalidateCache();
@@ -160,7 +162,7 @@ export class SesSettingsService {
         } catch (deleteError) {
           logger.error(
             { err: deleteError },
-            "Failed to delete SNS topic after error"
+            "Failed to delete SNS topic after error",
           );
         }
       }
@@ -202,13 +204,13 @@ export class SesSettingsService {
         transactionalQueue: EmailQueueService.transactionalQueue,
         marketingQueue: EmailQueueService.marketingQueue,
       },
-      "Email queues before update"
+      "Email queues before update",
     );
 
     EmailQueueService.initializeQueue(
       setting.region,
       setting.sesEmailRateLimit,
-      setting.transactionalQuota
+      setting.transactionalQuota,
     );
 
     logger.info(
@@ -216,7 +218,7 @@ export class SesSettingsService {
         transactionalQueue: EmailQueueService.transactionalQueue,
         marketingQueue: EmailQueueService.marketingQueue,
       },
-      "Email queues after update"
+      "Email queues after update",
     );
 
     await this.invalidateCache();
@@ -268,7 +270,7 @@ async function registerConfigurationSet(setting: SesSetting) {
     configGeneral,
     destination,
     GENERAL_EVENTS,
-    setting.region
+    setting.region,
   );
 
   const configClick = `${setting.idPrefix}-${setting.region}-unsend-click`;
@@ -276,7 +278,7 @@ async function registerConfigurationSet(setting: SesSetting) {
     configClick,
     destination,
     [...GENERAL_EVENTS, "CLICK"],
-    setting.region
+    setting.region,
   );
 
   const configOpen = `${setting.idPrefix}-${setting.region}-unsend-open`;
@@ -284,7 +286,7 @@ async function registerConfigurationSet(setting: SesSetting) {
     configOpen,
     destination,
     [...GENERAL_EVENTS, "OPEN"],
-    setting.region
+    setting.region,
   );
 
   const configFull = `${setting.idPrefix}-${setting.region}-unsend-full`;
@@ -292,7 +294,7 @@ async function registerConfigurationSet(setting: SesSetting) {
     configFull,
     destination,
     [...GENERAL_EVENTS, "CLICK", "OPEN"],
-    setting.region
+    setting.region,
   );
 
   return await db.sesSetting.update({

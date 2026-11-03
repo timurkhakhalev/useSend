@@ -108,7 +108,7 @@ describe("postbox", () => {
   });
 
   it("creates a BYODKIM identity without a MAIL FROM domain", async () => {
-    const publicKey = await addDomain("mail.example.com", "ru-central1");
+    const { publicKey } = await addDomain("mail.example.com", "ru-central1");
 
     const commands = sentCommands();
     expect(publicKey).toMatch(/^[A-Za-z0-9+/=]+$/);

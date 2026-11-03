@@ -123,7 +123,11 @@ export function decodeMimeWords(value: string) {
     );
 }
 
-async function handleRecord(record: _Record) {
+async function handleRecord(
+  record: _Record,
+  streamName: string,
+  shardId: string,
+) {
   if (!record.Data) {
     return;
   }
@@ -137,7 +141,8 @@ async function handleRecord(record: _Record) {
     return;
   }
 
-  const id = event.eventId ?? `seq-${record.SequenceNumber}`;
+  const id =
+    event.eventId ?? `seq-${streamName}-${shardId}-${record.SequenceNumber}`;
   const isNew = await getRedis().set(
     dedupeKey(id),
     "1",
@@ -188,7 +193,7 @@ async function readShard(streamName: string, shardId: string) {
     );
 
     for (const record of response.Records ?? []) {
-      await handleRecord(record);
+      await handleRecord(record, streamName, shardId);
       if (record.SequenceNumber) {
         await redis.set(key, record.SequenceNumber);
       }
@@ -206,16 +211,21 @@ async function readShard(streamName: string, shardId: string) {
 
 export async function pollPostboxEvents() {
   const streamName = getPostboxStreamPath();
-  const shards = await getKinesisClient().send(
-    new ListShardsCommand({ StreamName: streamName }),
-  );
-
+  let nextToken: string | undefined;
   let processed = 0;
-  for (const shard of shards.Shards ?? []) {
-    if (shard.ShardId) {
-      processed += await readShard(streamName, shard.ShardId);
+  do {
+    const shards = await getKinesisClient().send(
+      new ListShardsCommand(
+        nextToken ? { NextToken: nextToken } : { StreamName: streamName },
+      ),
+    );
+    for (const shard of shards.Shards ?? []) {
+      if (shard.ShardId) {
+        processed += await readShard(streamName, shard.ShardId);
+      }
     }
-  }
+    nextToken = shards.NextToken;
+  } while (nextToken);
 
   if (processed > 0) {
     logger.info({ processed }, "[PostboxEventsJob]: Read stream records");
@@ -233,6 +243,8 @@ export async function initPostboxEventsJob() {
     prefix: BULL_PREFIX,
     skipVersionCheck: true,
   });
+
+  await queue.setGlobalConcurrency(1);
 
   const worker = new Worker(
     POSTBOX_EVENTS_QUEUE,

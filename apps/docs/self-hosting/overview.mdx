@@ -6,7 +6,7 @@ description: "An end-to-end guide on how to self-host useSend. An open-source se
 ## Prerequisites
 
 - A [GitHub](https://github.com) account
-- An [AWS](https://aws.amazon.com) account
+- An [AWS](https://aws.amazon.com) account or a Yandex Cloud account with Postbox and Yandex Data Streams
 
 If you have any questions join [#self-host](https://discord.gg/gbsvjb9MqV) on discord.
 
@@ -136,6 +136,72 @@ This uses the `minio/minio` image already on your server. If your public storage
 
   </Step>
 </Steps>
+
+## Yandex Cloud Postbox instead of SES
+
+Set `EMAIL_PROVIDER=postbox` to send through the SES v2 compatible Postbox API.
+`EMAIL_PROVIDER=ses` is the default. Postgres and Redis are still required.
+
+```env
+EMAIL_PROVIDER="postbox"
+AWS_DEFAULT_REGION="ru-central1"
+AWS_ACCESS_KEY_ID="<service-account-static-key-id>"
+AWS_SECRET_ACCESS_KEY="<service-account-static-secret>"
+AWS_SES_ENDPOINT="https://postbox.cloud.yandex.net"
+POSTBOX_YDS_ENDPOINT="https://yds.serverless.yandexcloud.net"
+POSTBOX_YDS_STREAM="/ru-central1/<cloud-id>/<database-id>/<stream-name>"
+```
+
+Create a Yandex Data Streams stream first. Use its full stream path, including
+its database path, for `POSTBOX_YDS_STREAM`. Grant the sending service account
+permission to manage Postbox identities and configuration sets, publish events
+to this stream, and read its shards and records. Configure the Yandex resources
+and their service accounts to allow Postbox to write to the stream.
+
+YDS is required for delivery status, bounces, complaints, opens and clicks.
+Postbox has no SNS callback; useSend polls YDS every five seconds through the
+Kinesis API over HTTP/1.1. Redis stores shard checkpoints and event deduplication
+keys, so keep Redis data across restarts. Configure stream retention to cover
+expected application downtime. Adding a region creates configuration sets that
+publish events to this stream. Use `ru-central1` and set the send rate to your
+Postbox quota; Postbox does not provide the SES GetAccount quota API.
+
+For Postbox the settings form has no callback URL. Remove any local mock
+`AWS_SES_ENDPOINT` and `AWS_SNS_ENDPOINT` settings. The Postbox endpoint above
+is also used by default when `AWS_SES_ENDPOINT` is unset.
+
+Add the domain DNS records shown by useSend. The DKIM TXT value must have this
+exact format, without spaces:
+
+```text
+v=DKIM1;h=sha256;k=rsa;p=<public-key>
+```
+
+Postbox has no custom MAIL FROM support. SPF belongs on the sending domain:
+`v=spf1 include:spf.postbox.yandexcloud.net ~all`. If you already have an SPF
+record, add this include to it instead of creating a second SPF record.
+
+In a live test, a failed DKIM check did not recover within 15 minutes after
+publishing the TXT record. For newly created domains, **Verify again** checks
+that DNS matches and recreates a failed Postbox identity with the same DKIM
+key. Attempts are limited to once per ten minutes and five per day per domain.
+Keys are encrypted with AES-256-GCM using a key derived from `NEXTAUTH_SECRET`
+and stored separately from domain API responses. Back up that secret along with
+the database. Changing it prevents automatic re-verification of existing keys.
+Domains added before key storage continue sending and checking status, but
+cannot use automatic identity recreation.
+
+Open and click tracking works: Postbox rewrites HTML links and adds an invisible
+GIF. Turn tracking on for the domain before sending. Open and click events
+arrive through YDS. A permanent Gmail bounce creates a hard-bounce suppression;
+Postbox can report `bounceSubType=Undetermined`, which useSend exposes as
+`General`. The Amazon SES bounce and complaint simulator addresses did not
+produce simulated events in the test; use a controlled mailbox for validation.
+
+The fork's `publish-fork.yml` workflow builds `docker/Dockerfile` for
+`linux/amd64` and publishes `ghcr.io/timurkhakhalev/usesend` using `GITHUB_TOKEN`.
+Pushes to `main`, the Postbox branch, and tags produce `sha-<short>` images;
+the default branch also produces `latest`, and tags produce their tag name.
 
 ## Step 2: Setting up the app
 

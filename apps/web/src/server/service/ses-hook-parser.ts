@@ -58,8 +58,10 @@ export async function parseSesHook(data: SesEvent) {
 
   // Handle race condition: If email not found by sesEmailId, try to find by custom header
   if (!email) {
-    const emailIdHeader = data.mail.headers.find(
-      (h) => h.name === "X-Usesend-Email-ID" || h.name === "X-Unsend-Email-ID",
+    const emailIdHeader = data.mail.headers.find((h) =>
+      ["x-usesend-email-id", "x-unsend-email-id"].includes(
+        h.name.toLowerCase(),
+      ),
     );
 
     if (emailIdHeader?.value) {
@@ -412,8 +414,7 @@ function normalizeBounceSubType(
   subType: SesBounce["bounceSubType"] | undefined,
 ): EmailBounceSubType {
   const normalized = subType?.replace(/\s+/g, "") as
-    | EmailBounceSubType
-    | undefined;
+    EmailBounceSubType | undefined;
 
   const validSubTypes: EmailBounceSubType[] = [
     "General",

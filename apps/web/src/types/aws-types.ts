@@ -33,6 +33,7 @@ export interface SesBounce {
   bounceType: "Transient" | "Permanent" | "Undetermined";
   bounceSubType:
     | "General"
+    | "Undetermined"
     | "NoEmail"
     | "Suppressed"
     | "OnAccountSuppressionList	"

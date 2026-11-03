@@ -89,7 +89,7 @@ export async function addDomain(
   domain: string,
   region: string,
   sesTenantId?: string,
-  dkimSelector: string = "usesend"
+  dkimSelector: string = "usesend",
 ) {
   const sesClient = getSesClient(region);
 
@@ -121,13 +121,13 @@ export async function addDomain(
       });
 
     const tenantResourceAssociationResponse = await sesClient.send(
-      tenantResourceAssociationCommand
+      tenantResourceAssociationCommand,
     );
 
     if (tenantResourceAssociationResponse.$metadata.httpStatusCode !== 200) {
       logger.error(
         { tenantResourceAssociationResponse },
-        "Failed to associate domain with tenant"
+        "Failed to associate domain with tenant",
       );
       throw new Error("Failed to associate domain with tenant");
     }
@@ -140,18 +140,53 @@ export async function addDomain(
   ) {
     logger.error(
       { response, emailIdentityResponse },
-      "Failed to create domain identity"
+      "Failed to create domain identity",
     );
     throw new Error("Failed to create domain identity");
   }
 
-  return publicKey;
+  return { publicKey, privateKey };
+}
+
+/**
+ * Postbox checks DKIM once, right after the identity is created, and has no
+ * API to re-run the check. Deleting and recreating the identity with the same
+ * BYODKIM key makes it look up the DNS record again.
+ */
+export async function recreateDomainIdentity(
+  domain: string,
+  region: string,
+  dkimSelector: string,
+  privateKey: string,
+) {
+  const sesClient = getSesClient(region);
+
+  try {
+    await sesClient.send(
+      new DeleteEmailIdentityCommand({ EmailIdentity: domain }),
+    );
+  } catch (error) {
+    // Already gone (e.g. an earlier recreate failed half-way): just create it.
+    if (!(error instanceof Error && error.name === "NotFoundException")) {
+      throw error;
+    }
+  }
+
+  return sesClient.send(
+    new CreateEmailIdentityCommand({
+      EmailIdentity: domain,
+      DkimSigningAttributes: {
+        DomainSigningSelector: dkimSelector,
+        DomainSigningPrivateKey: privateKey,
+      },
+    }),
+  );
 }
 
 export async function deleteDomain(
   domain: string,
   region: string,
-  sesTenantId?: string
+  sesTenantId?: string,
 ) {
   const sesClient = getSesClient(region);
 
@@ -163,13 +198,13 @@ export async function deleteDomain(
       });
 
     const tenantResourceAssociationResponse = await sesClient.send(
-      tenantResourceAssociationCommand
+      tenantResourceAssociationCommand,
     );
 
     if (tenantResourceAssociationResponse.$metadata.httpStatusCode !== 200) {
       logger.error(
         { tenantResourceAssociationResponse },
-        "Failed to delete tenant resource association"
+        "Failed to delete tenant resource association",
       );
       throw new Error("Failed to delete tenant resource association");
     }
@@ -290,14 +325,13 @@ export async function getAccount(region: string) {
 }
 
 export type EventDestinationTarget =
-  | { type: "sns"; topicArn: string }
-  | { type: "yds"; streamArn: string };
+  { type: "sns"; topicArn: string } | { type: "yds"; streamArn: string };
 
 export async function addWebhookConfiguration(
   configName: string,
   destination: EventDestinationTarget,
   eventTypes: EventType[],
-  region: string
+  region: string,
 ) {
   const sesClient = getSesClient(region);
 
@@ -339,7 +373,7 @@ export async function addWebhookConfiguration(
  */
 export async function deleteFromSesSuppressionList(
   email: string,
-  region: string
+  region: string,
 ): Promise<boolean> {
   const sesClient = getSesClient(region);
   try {
@@ -354,13 +388,13 @@ export async function deleteFromSesSuppressionList(
     if (error.name === "NotFoundException") {
       logger.debug(
         { email, region },
-        "Email not in SES suppression list (already removed or never added)"
+        "Email not in SES suppression list (already removed or never added)",
       );
       return true;
     }
     logger.error(
       { email, region, error: error.message },
-      "Failed to remove email from SES suppression list"
+      "Failed to remove email from SES suppression list",
     );
     return false;
   }

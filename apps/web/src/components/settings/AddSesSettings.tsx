@@ -22,7 +22,7 @@ import { sesRegionSchema } from "~/lib/zod/ses-setting-schema";
 
 const FormSchema = z.object({
   region: sesRegionSchema,
-  usesendUrl: z.string().url(),
+  usesendUrl: z.string().url().or(z.literal("")),
   sendRate: z.coerce.number(),
   transactionalQuota: z.coerce.number().min(0).max(100),
 });
@@ -50,8 +50,9 @@ export const AddSesSettingsForm: React.FC<SesSettingsProps> = ({
   onSuccess,
 }) => {
   const defaultRegion = api.admin.getDefaultSesRegion.useQuery();
+  const provider = api.admin.getEmailProvider.useQuery();
 
-  if (defaultRegion.isLoading) {
+  if (defaultRegion.isLoading || provider.isLoading) {
     return (
       <div className="flex min-h-[500px] items-center justify-center">
         <Spinner className="h-5 w-5" />
@@ -59,16 +60,19 @@ export const AddSesSettingsForm: React.FC<SesSettingsProps> = ({
     );
   }
 
-  if (!defaultRegion.data) {
+  if (!defaultRegion.data || !provider.data) {
     return (
       <div className="flex min-h-[500px] flex-col items-center justify-center gap-3 text-center">
         <p className="text-sm text-muted-foreground" role="alert">
-          Failed to load the default AWS region.
+          Failed to load the email provider settings.
         </p>
         <Button
           type="button"
           variant="outline"
-          onClick={() => void defaultRegion.refetch()}
+          onClick={() => {
+            void defaultRegion.refetch();
+            void provider.refetch();
+          }}
         >
           Retry
         </Button>
@@ -79,14 +83,15 @@ export const AddSesSettingsForm: React.FC<SesSettingsProps> = ({
   return (
     <SesSettingsForm
       defaultRegion={defaultRegion.data}
+      postbox={provider.data === "postbox"}
       onSuccess={onSuccess}
     />
   );
 };
 
 const SesSettingsForm: React.FC<
-  SesSettingsProps & { defaultRegion: string }
-> = ({ defaultRegion, onSuccess }) => {
+  SesSettingsProps & { defaultRegion: string; postbox: boolean }
+> = ({ defaultRegion, postbox, onSuccess }) => {
   const addSesSettings = api.admin.addSesSettings.useMutation();
   const utils = api.useUtils();
 
@@ -103,7 +108,11 @@ const SesSettingsForm: React.FC<
   function onSubmit(data: z.infer<typeof FormSchema>) {
     const localhost = isLocalhost();
 
-    if (!data.usesendUrl.startsWith("https://") && !localhost) {
+    if (
+      !postbox &&
+      (!data.usesendUrl ||
+        (!data.usesendUrl.startsWith("https://") && !localhost))
+    ) {
       form.setError("usesendUrl", {
         message: "URL must start with https://",
       });
@@ -189,30 +198,37 @@ const SesSettingsForm: React.FC<
             </FormItem>
           )}
         />
-        <FormField
-          control={form.control}
-          name="usesendUrl"
-          render={({ field, formState }) => (
-            <FormItem>
-              <FormLabel>Callback URL</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="https://example.com"
-                  className="w-full"
-                  {...field}
-                />
-              </FormControl>
-              {formState.errors.usesendUrl ? (
-                <FormMessage />
-              ) : (
-                <FormDescription>
-                  This url should be accessible from the internet. Will be
-                  called from SES
-                </FormDescription>
-              )}
-            </FormItem>
-          )}
-        />
+        {postbox ? (
+          <p className="text-sm text-muted-foreground">
+            Postbox events are read from Yandex Data Streams. No callback URL is
+            needed.
+          </p>
+        ) : (
+          <FormField
+            control={form.control}
+            name="usesendUrl"
+            render={({ field, formState }) => (
+              <FormItem>
+                <FormLabel>Callback URL</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="https://example.com"
+                    className="w-full"
+                    {...field}
+                  />
+                </FormControl>
+                {formState.errors.usesendUrl ? (
+                  <FormMessage />
+                ) : (
+                  <FormDescription>
+                    This url should be accessible from the internet. Will be
+                    called from SES
+                  </FormDescription>
+                )}
+              </FormItem>
+            )}
+          />
+        )}
         <FormField
           control={form.control}
           name="sendRate"

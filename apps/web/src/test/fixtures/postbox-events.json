@@ -1,0 +1,228 @@
+{
+  "Bounce": {
+    "eventType": "Bounce",
+    "mail": {
+      "timestamp": "2026-11-03T16:09:25.977404477Z",
+      "messageId": "DMLPFV9D0NBG.29V8R8LJ5BKGH@postbox.cloud.yandex.net",
+      "commonHeaders": {
+        "from": ["<hello@mail.example.com>"],
+        "to": ["<no-such-user@example.com>"],
+        "subject": "Bounce test",
+        "date": "Tue, 03 Nov 2026 16:09:25 +0000",
+        "messageId": "DMLPFV9D0NBG.29V8R8LJ5BKGH@postbox.cloud.yandex.net",
+        "originalMessageId": ""
+      },
+      "headers": [
+        {
+          "name": "X-Entity-Ref-Id",
+          "value": "uMX4wDDNGwhsyeT0JWz7P"
+        },
+        {
+          "name": "X-Usesend-Email-Id",
+          "value": "email-bounce-1"
+        },
+        {
+          "name": "From",
+          "value": "hello@mail.example.com"
+        },
+        {
+          "name": "To",
+          "value": "no-such-user@example.com"
+        },
+        {
+          "name": "Subject",
+          "value": "Bounce test"
+        },
+        {
+          "name": "Message-Id",
+          "value": "<b4aa6143-b12a-63d1-99d5-d220d5c8352e@mail.example.com>"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": "7bit"
+        },
+        {
+          "name": "Date",
+          "value": "Tue, 03 Nov 2026 16:09:25 +0000"
+        },
+        {
+          "name": "Mime-Version",
+          "value": "1.0"
+        },
+        {
+          "name": "Content-Type",
+          "value": "text/plain; charset=utf-8"
+        }
+      ],
+      "tags": {
+        "ses:configuration-set": ["ZWLwK46dBa8cHUrzYeZPM"],
+        "ses:from-domain": ["mail.example.com"],
+        "ses:source-ip": ["203.0.113.10"]
+      },
+      "identityId": "identity-1"
+    },
+    "bounce": {
+      "bounceType": "Permanent",
+      "bounceSubType": "Undetermined",
+      "bouncedRecipients": [
+        {
+          "emailAddress": "no-such-user@example.com",
+          "action": "failed",
+          "status": "5.1.1",
+          "diagnosticCode": "The email account that you tried to reach does not exist. Please try double-checking the recipient's email address for typos or unnecessary spaces. For more information, go to https://support.google.com/mail/?p=NoSuchUser abc123 - gsmtp"
+        }
+      ],
+      "timestamp": "2026-11-03T16:09:27.068955227Z",
+      "dialAttempts": [
+        {
+          "mxHost": "gmail-smtp-in.l.google.com.",
+          "ip": "142.251.127.27",
+          "reason": "Smtp",
+          "error": "550 \"5.1.1 The email account that you tried to reach does not exist. Please try\\n5.1.1 double-checking the recipient's email address for typos or\\n5.1.1 unnecessary spaces. For more information, go to\\n5.1.1  https://support.google.com/mail/?p=NoSuchUser abc123 - gsmtp\"",
+          "negotiatedTls": "TLSv1.3"
+        }
+      ]
+    },
+    "eventId": "-2TceOd1jVGEi7Vy0M2q_"
+  },
+  "Click": {
+    "eventType": "Click",
+    "mail": {
+      "timestamp": "2026-11-03T16:14:08.924581Z",
+      "messageId": "DMLPJH8SG9H6.1P9190G8O7811@postbox.cloud.yandex.net",
+      "commonHeaders": {
+        "from": ["<hello@mail.example.com>"],
+        "to": ["<recipient@example.net>"],
+        "subject": "Tracking test",
+        "date": "Tue, 03 Nov 2026 16:14:08 +0000",
+        "messageId": "DMLPJH8SG9H6.1P9190G8O7811@postbox.cloud.yandex.net",
+        "originalMessageId": ""
+      },
+      "headers": [
+        {
+          "name": "X-Entity-Ref-Id",
+          "value": "ckqnXyKK0fhnkHTkl7cJf"
+        },
+        {
+          "name": "X-Usesend-Email-Id",
+          "value": "email-tracked-1"
+        },
+        {
+          "name": "From",
+          "value": "hello@mail.example.com"
+        },
+        {
+          "name": "To",
+          "value": "recipient@example.net"
+        },
+        {
+          "name": "Subject",
+          "value": "Tracking test"
+        },
+        {
+          "name": "Message-Id",
+          "value": "<e14b7205-6d69-0cb5-75c2-4497b6b2e433@mail.example.com>"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": "quoted-printable"
+        },
+        {
+          "name": "Date",
+          "value": "Tue, 03 Nov 2026 16:14:08 +0000"
+        },
+        {
+          "name": "Mime-Version",
+          "value": "1.0"
+        },
+        {
+          "name": "Content-Type",
+          "value": "text/html; charset=utf-8"
+        }
+      ],
+      "tags": {
+        "ses:configuration-set": ["bW54zyaZVnGQCTsJLQZlr"],
+        "ses:from-domain": ["mail.example.com"],
+        "ses:source-ip": ["203.0.113.10"]
+      },
+      "identityId": "identity-1"
+    },
+    "click": {
+      "ipAddress": "203.0.113.10",
+      "timestamp": "2026-11-03T16:14:24.734216447Z",
+      "userAgent": "Mozilla/5.0 probe",
+      "url": "https://example.com/landing?x=1",
+      "link": "https://example.com/landing?x=1"
+    },
+    "eventId": "uFPKH5yKezIG1Lkn2klbG"
+  },
+  "Open": {
+    "eventType": "Open",
+    "mail": {
+      "timestamp": "2026-11-03T16:14:08.924581Z",
+      "messageId": "DMLPJH8SG9H6.1P9190G8O7811@postbox.cloud.yandex.net",
+      "commonHeaders": {
+        "from": ["<hello@mail.example.com>"],
+        "to": ["<recipient@example.net>"],
+        "subject": "Tracking test",
+        "date": "Tue, 03 Nov 2026 16:14:08 +0000",
+        "messageId": "DMLPJH8SG9H6.1P9190G8O7811@postbox.cloud.yandex.net",
+        "originalMessageId": ""
+      },
+      "headers": [
+        {
+          "name": "X-Entity-Ref-Id",
+          "value": "ckqnXyKK0fhnkHTkl7cJf"
+        },
+        {
+          "name": "X-Usesend-Email-Id",
+          "value": "email-tracked-1"
+        },
+        {
+          "name": "From",
+          "value": "hello@mail.example.com"
+        },
+        {
+          "name": "To",
+          "value": "recipient@example.net"
+        },
+        {
+          "name": "Subject",
+          "value": "Tracking test"
+        },
+        {
+          "name": "Message-Id",
+          "value": "<e14b7205-6d69-0cb5-75c2-4497b6b2e433@mail.example.com>"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": "quoted-printable"
+        },
+        {
+          "name": "Date",
+          "value": "Tue, 03 Nov 2026 16:14:08 +0000"
+        },
+        {
+          "name": "Mime-Version",
+          "value": "1.0"
+        },
+        {
+          "name": "Content-Type",
+          "value": "text/html; charset=utf-8"
+        }
+      ],
+      "tags": {
+        "ses:configuration-set": ["bW54zyaZVnGQCTsJLQZlr"],
+        "ses:from-domain": ["mail.example.com"],
+        "ses:source-ip": ["203.0.113.10"]
+      },
+      "identityId": "identity-1"
+    },
+    "open": {
+      "ipAddress": "203.0.113.10",
+      "timestamp": "2026-11-03T16:16:30.744501578Z",
+      "userAgent": "Mozilla/5.0 probe"
+    },
+    "eventId": "RuXtfzW9TB-EfUwrF_jrR"
+  }
+}

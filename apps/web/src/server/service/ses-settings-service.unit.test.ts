@@ -58,7 +58,7 @@ describe("SesSettingsService.createSesSetting", () => {
 
     await SesSettingsService.createSesSetting({
       region: "ru-central1",
-      usesendUrl: "https://usesend.example.com/",
+      usesendUrl: "",
       sendingRateLimit: 1,
       transactionalQuota: 50,
     });
