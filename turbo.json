@@ -4,6 +4,9 @@
     "**/.env.*local"
   ],
   "tasks": {
+    "typecheck": {
+      "outputs": []
+    },
     "build": {
       "dependsOn": [
         "^build",

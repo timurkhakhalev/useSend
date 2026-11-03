@@ -1,0 +1,44 @@
+{
+  "name": "usesend-cli",
+  "version": "0.1.0",
+  "description": "Agent-friendly command line interface for the useSend email API",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/usesend/useSend",
+    "directory": "packages/cli"
+  },
+  "type": "module",
+  "bin": {
+    "usesend": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "skill",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.2",
+    "@typescript-eslint/parser": "^8.31.0",
+    "@usesend/eslint-config": "workspace:*",
+    "@usesend/typescript-config": "workspace:*",
+    "commander": "^14.0.0",
+    "eslint": "^8.57.1",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3",
+    "usesend-js": "workspace:*",
+    "vitest": "^4.1.11",
+    "@typescript-eslint/eslint-plugin": "^8.31.0"
+  }
+}

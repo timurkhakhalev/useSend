@@ -33,6 +33,7 @@ export class UseSend {
   constructor(
     readonly key?: string,
     url?: string,
+    private readonly options: { fetch?: typeof fetch } = {},
   ) {
     if (!key) {
       if (typeof process !== "undefined" && process.env) {
@@ -79,7 +80,10 @@ export class UseSend {
       headers: this.mergeHeaders(options.headers),
     };
 
-    const response = await fetch(`${this.url}${path}`, requestOptions);
+    const response = await (this.options.fetch ?? globalThis.fetch)(
+      `${this.url}${path}`,
+      requestOptions,
+    );
     const defaultError = {
       code: "INTERNAL_SERVER_ERROR",
       message: response.statusText,

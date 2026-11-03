@@ -404,6 +404,42 @@ importers:
         specifier: ^4.1.11
         version: 4.1.12(@types/node@22.20.1)(@vitest/coverage-v8@4.1.12)(vite@7.3.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0))
 
+  packages/cli:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.2
+        version: 22.20.1
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^8.31.0
+        version: 8.63.0(@typescript-eslint/parser@8.63.0(eslint@8.57.1)(typescript@5.9.3))(eslint@8.57.1)(typescript@5.9.3)
+      '@typescript-eslint/parser':
+        specifier: ^8.31.0
+        version: 8.63.0(eslint@8.57.1)(typescript@5.9.3)
+      '@usesend/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@usesend/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      commander:
+        specifier: ^14.0.0
+        version: 14.0.3
+      eslint:
+        specifier: ^8.57.1
+        version: 8.57.1
+      tsup:
+        specifier: ^8.4.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.30)(supports-color@10.2.2)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      usesend-js:
+        specifier: workspace:*
+        version: link:../sdk
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.12(@types/node@22.20.1)(@vitest/coverage-v8@4.1.12)(vite@7.3.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0))
+
   packages/email-editor:
     dependencies:
       '@tiptap/core':
@@ -4345,6 +4381,10 @@ packages:
   commander@10.0.1:
     resolution: {integrity: sha512-y4Mg2tXshplEbSGzx7amzPwKKOCGuoSRP/CjEdwwk0FOGlUbq6lKuoyDZTNZkmxHdJtp54hdfY/JUrdL7Xfdug==}
     engines: {node: '>=14'}
+
+  commander@14.0.3:
+    resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
+    engines: {node: '>=20'}
 
   commander@4.1.1:
     resolution: {integrity: sha512-NOKm8xhkzAjzFx8B2v5OAHT+u5pRQc2UCa2Vq9jYL/31o2wi9mxBA7LIFs3sV5VSC49z6pEhfbMULvShKj26WA==}
@@ -11508,6 +11548,8 @@ snapshots:
   comma-separated-tokens@2.0.3: {}
 
   commander@10.0.1: {}
+
+  commander@14.0.3: {}
 
   commander@4.1.1: {}
 
