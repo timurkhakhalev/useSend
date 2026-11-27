@@ -16,6 +16,7 @@ import { getServerAuthSession } from "~/server/auth";
 import { db } from "~/server/db";
 import { getChildLogger, logger, withLogger } from "../logger/log";
 import { randomUUID } from "crypto";
+import { parseActiveTeamId } from "~/lib/constants/team";
 
 /**
  * 1. CONTEXT
@@ -125,10 +126,20 @@ export const protectedProcedure = authedProcedure.use(({ ctx, next }) => {
 });
 
 export const teamProcedure = protectedProcedure.use(async ({ ctx, next }) => {
-  const teamUser = await db.teamUser.findFirst({
-    where: { userId: ctx.session.user.id },
-    include: { team: true },
-  });
+  const activeTeamId = parseActiveTeamId(ctx.headers?.get("cookie"));
+
+  const teamUser =
+    (activeTeamId
+      ? await db.teamUser.findFirst({
+          where: { userId: ctx.session.user.id, teamId: activeTeamId },
+          include: { team: true },
+        })
+      : null) ??
+    (await db.teamUser.findFirst({
+      where: { userId: ctx.session.user.id },
+      include: { team: true },
+      orderBy: { teamId: "asc" },
+    }));
 
   if (!teamUser) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Team not found" });

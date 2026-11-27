@@ -52,6 +52,8 @@ import {
   DropdownMenuTrigger,
 } from "@usesend/ui/src/dropdown-menu";
 import { FeedbackDialog } from "./FeedbackDialog";
+import { CreateTeamDialog, TeamMenuItems } from "./team/TeamSwitcher";
+import { useState } from "react";
 import { env } from "~/env";
 
 // General items
@@ -290,9 +292,14 @@ export function NavUser({
   };
 }) {
   const { isMobile } = useSidebar();
+  const [createTeamOpen, setCreateTeamOpen] = useState(false);
 
   return (
     <SidebarMenu>
+      <CreateTeamDialog
+        open={createTeamOpen}
+        onOpenChange={setCreateTeamOpen}
+      />
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -350,6 +357,8 @@ export function NavUser({
                 </div>
               </div>
             </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <TeamMenuItems onCreateTeam={() => setCreateTeamOpen(true)} />
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem asChild>

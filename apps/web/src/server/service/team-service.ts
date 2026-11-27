@@ -66,12 +66,10 @@ export class TeamService {
       },
     });
 
-    if (teams.length > 0) {
-      logger.info({ userId }, "User already has a team");
-      return;
-    }
-
-    if (!env.NEXT_PUBLIC_IS_CLOUD) {
+    // Fork: a member of a team may create more teams (separate suppression
+    // lists, API keys and rate limits per sending stream). A user without a
+    // team still cannot create a second team on a self-hosted instance.
+    if (teams.length === 0 && !env.NEXT_PUBLIC_IS_CLOUD) {
       const _team = await db.team.findFirst();
       if (_team) {
         throw new TRPCError({
@@ -126,6 +124,7 @@ export class TeamService {
           },
         },
       },
+      orderBy: { id: "asc" },
     });
   }
 
